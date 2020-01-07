@@ -1,6 +1,10 @@
 # Gassample
 Implementation example of Google Apps Script with clasp
 
+## ディスクレーマー
+
+公開用にドキュメントを書き換えて以降はテストしていないので、使用しないでください。
+
 ## 前提条件
 
 以下のリソースをenableにすること。

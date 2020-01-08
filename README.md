@@ -36,7 +36,8 @@ $ ../node_modules/.bin/clasp --version
 $ ../node_modules/.bin/clasp pull
 ```
 
-### push (Note: https://script.google.com/home/usersettings でAPIを有効にする必要がある。)
+### push 
+(Note: https://script.google.com/home/usersettings でAPIを有効にする必要がある。)
 
 ```
 $ ../node_modules/.bin/clasp push

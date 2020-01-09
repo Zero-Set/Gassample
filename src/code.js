@@ -24,7 +24,7 @@ function translateDocument(skipCount) {
   index = 0
   paragraphs = d.getBody().getParagraphs()
   paragraphs.forEach(function (paragraph, index) {
-    //トリガー定義があれば、やめる。
+    //トリガーの定義があれば、やめる。
     if (PropertiesService.getScriptProperties().getProperty("skipkey")) {
       return;
     } else {
@@ -59,7 +59,6 @@ function setdocpro() {
 
 
 function doRetry() {
-  // https://kido0617.github.io/js/2017-02-13-gas-6-minutes/
   var skipCounter = parseInt(PropertiesService.getScriptProperties().getProperty("skipkey"))
   deleteTriggerSettings()
   mainProcess(skipCounter)
@@ -85,8 +84,6 @@ function retrySetting(startTime, index, funcionName) {
     PropertiesService.getScriptProperties().setProperty("skipkey", index);
     PropertiesService.getScriptProperties().setProperty("tid", triggerId)
     return true;
-  } else {
-    Logger.log("false")
   }
   return false;
 }
@@ -117,22 +114,29 @@ function getTargetFiles() {
 }
 
 // OCR main処理
-function mainProcess(skipCounter) {
+function mainProcess(skipCount) {
   var startTime = new Date();
   var ocrFileList = []
   var fileList = []
   var list = []
 
   ocrFileList = getTargetFiles();
+
   ocrFileList.forEach(function (ocrfile, index) {
+    // ループ処理の修正
     if (ocrfile.getName() !== ".DS_Store" && index >= this.skipCount) {
-      // 5分過ぎれば、トリガーを作成して処理を終了する。
-      if (retrySetting(this.startTime, index, "doRetry")) {
+      //定義があれば、やめる。
+      if (PropertiesService.getScriptProperties().getProperty("skipkey")) {
         return;
+      } else {
+        // トリガーセットの判定を行う。
+        if (retrySetting(this.startTime, index, "doRetry")) {
+          return;
+        }
       }
       doocr(ocrfile)
     }
-  }, { 'skipCount': skipCount, 'startTime': startTime })();
+  }, { 'skipCount': skipCount, 'startTime': startTime });
   secondSetting();
 }
 

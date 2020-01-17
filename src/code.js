@@ -79,7 +79,7 @@ function retrySetting(startTime, index, funcionName) {
   RETRY_INTERVAL = 300
   if (parseInt((new Date() - startTime)) > RETRY_INTERVAL * 1000) {
     var dt = new Date()
-    dt.setMinutes(dt.getMinutes() + 1)
+    dt.setMinutes(dt.getMinutes() + 2)
     var triggerId = ScriptApp.newTrigger(funcionName).timeBased().at(dt).create().getUniqueId();
     PropertiesService.getScriptProperties().setProperty("skipkey", index);
     PropertiesService.getScriptProperties().setProperty("tid", triggerId)
@@ -88,12 +88,25 @@ function retrySetting(startTime, index, funcionName) {
   return false;
 }
 
-// 3分後くらいに次の処理をしこむ
+/*
+うまくいかなかったときのために。
+function d(){
+       var funcionName="doRetry"
+       var dt = new Date()
+       dt.setMinutes(dt.getMinutes() + 1)
+       var triggerId = ScriptApp.newTrigger(funcionName).timeBased().at(dt).create().getUniqueId(); 
+       PropertiesService.getScriptProperties().setProperty("skipkey", 80);  
+       PropertiesService.getScriptProperties().setProperty("tid", triggerId)
+}
+*/
+
+// 2分後くらいに次の処理をしこむ
 function secondSetting() {
   var dt = new Date()
-  dt.setMinutes(dt.getMinutes() + 3)
+  dt.setMinutes(dt.getMinutes() + 2)
   var triggerId = ScriptApp.newTrigger("processSecond").timeBased().at(dt).create().getUniqueId();
   PropertiesService.getScriptProperties().setProperty("tid", triggerId)
+
 }
 
 // ターゲットファイルを取得する。
@@ -119,11 +132,13 @@ function mainProcess(skipCount) {
   var ocrFileList = []
   var fileList = []
   var list = []
+  var proceedFlg = true;
 
   ocrFileList = getTargetFiles();
 
   ocrFileList.forEach(function (ocrfile, index) {
-    // ループ処理の修正
+    Logger.log(ocrfile.getName())
+    // 翻訳の処理を追加
     if (ocrfile.getName() !== ".DS_Store" && index >= this.skipCount) {
       //定義があれば、やめる。
       if (PropertiesService.getScriptProperties().getProperty("skipkey")) {
@@ -131,13 +146,18 @@ function mainProcess(skipCount) {
       } else {
         // トリガーセットの判定を行う。
         if (retrySetting(this.startTime, index, "doRetry")) {
+          // このループの先の処理をしないためにこのフラグをfalseにする。
+          retryFlg = false;
           return;
         }
       }
       doocr(ocrfile)
     }
   }, { 'skipCount': skipCount, 'startTime': startTime });
-  secondSetting();
+
+  if (proceedFlg) {
+    secondSetting();
+  }
 }
 
 function processSecond() {
@@ -161,7 +181,7 @@ function processSecond() {
     var fileTypeList = [file.getName() + ".png", file.getName() + ".jpg"]
 
     for (fIndex in fileTypeList) {
-      index = filelist.indexOf(searchList[fIndex])
+      index = filelist.indexOf(fileTypeList[fIndex])
       if (index !== -1) {
         obj = makeobj(file)
         if (obj) {

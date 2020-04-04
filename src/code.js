@@ -1,44 +1,52 @@
+// 処理終わるまで変更しないこと。
 var FOLDNAME = "<INPUT FOLDER NAME>"
+var DOCID = "<INPUT DOC ID>"
+
 /*
 ===================================
  1.翻訳処理
 =================================== 
 */
 function startTranslateDocument() {
-  translateDocument(0);
+  translateDocument(DOCID, 0);
 }
 
-// Not tested.
 function retryTranslateDocument() {
   var skipCounter = parseInt(PropertiesService.getScriptProperties().getProperty("skipkey"))
   deleteTriggerSettings()
-  translateDocument(skipCounter)
+  translateDocument(DOCID, skipCounter)
 }
 
-// 
-function translateDocument(skipCount) {
+function translateDocument(d_id, skipCount) {
   var startTime = new Date();
-  id = "<INPUT DOC ID>"
-  d = DocumentApp.openById(id)
+  d = DocumentApp.openById(d_id)
+  Logger.log(d);
   name = d.getName()
   index = 0
   paragraphs = d.getBody().getParagraphs()
+  flg = true;
   paragraphs.forEach(function (paragraph, index) {
-    //トリガーの定義があれば、やめる。
     if (PropertiesService.getScriptProperties().getProperty("skipkey")) {
+      Logger.log("Trigger Defined");
       return;
     } else {
-      // トリガーセットの判定を行う。
+      // 処理時間によりリトライトリガーを作成する。
       if (retrySetting(this.startTime, index, "retryTranslateDocument")) {
+        flg = false
+        Logger.log("RetrySet");
         return;
       }
     }
 
     text = paragraph.getText()
-    if (text.indexOf("[Formula]") == -1 && paragraph.getHeading() == "Normal" && index >= this.skipCount) {
+    // v8エンジン対応
+    if (text.indexOf("[Formula]") === -1 && paragraph.getHeading() == "NORMAL" && index >= this.skipCount && flg) {
+      Logger.log("Processing")
       var j = LanguageApp.translate(text, 'en', 'ja')
       paragraph.appendText("\n" + j)
       Utilities.sleep(1200)
+    } else {
+      Logger.log("not translate")
     }
   }, { 'skipCount': skipCount, 'startTime': startTime });
 }
@@ -76,7 +84,8 @@ function deleteTriggerSettings() {
 
 // リトライ用の処理
 function retrySetting(startTime, index, funcionName) {
-  RETRY_INTERVAL = 300
+  Logger.log("Retry Setting")
+  RETRY_INTERVAL = 240
   if (parseInt((new Date() - startTime)) > RETRY_INTERVAL * 1000) {
     var dt = new Date()
     dt.setMinutes(dt.getMinutes() + 2)
@@ -88,20 +97,9 @@ function retrySetting(startTime, index, funcionName) {
   return false;
 }
 
-/*
-うまくいかなかったときのために。
-function d(){
-       var funcionName="doRetry"
-       var dt = new Date()
-       dt.setMinutes(dt.getMinutes() + 1)
-       var triggerId = ScriptApp.newTrigger(funcionName).timeBased().at(dt).create().getUniqueId(); 
-       PropertiesService.getScriptProperties().setProperty("skipkey", 80);  
-       PropertiesService.getScriptProperties().setProperty("tid", triggerId)
-}
-*/
-
-// 2分後くらいに次の処理をしこむ
+// 2分後にOCR処理されたファイルマージ処理を動かす。
 function secondSetting() {
+  Logger.log("")
   var dt = new Date()
   dt.setMinutes(dt.getMinutes() + 2)
   var triggerId = ScriptApp.newTrigger("processSecond").timeBased().at(dt).create().getUniqueId();
@@ -112,17 +110,28 @@ function secondSetting() {
 // ターゲットファイルを取得する。
 function getTargetFiles() {
   var files = DriveApp.getFoldersByName(FOLDNAME)
+  Logger.log(files)
+
+  if (!files) {
+    return null
+  }
+
   var folderId = ""
   var iter
   var retFiles = []
   while (files.hasNext()) {
     folderId = files.next().getId()
   }
-  // Iteratorではなく、リストに変換
-  iter = DriveApp.getFolderById(folderId).getFiles()
-  while (iter.hasNext()) {
-    retFiles.push(iter.next())
+
+  // Idがない場合は空配列を返すよう修正   
+  if (folderId) {
+    // Iteratorではなく、リストに変換
+    iter = DriveApp.getFolderById(folderId).getFiles()
+    while (iter.hasNext()) {
+      retFiles.push(iter.next())
+    }
   }
+  Logger.log(retFiles)
   return retFiles
 }
 
@@ -135,19 +144,19 @@ function mainProcess(skipCount) {
   var proceedFlg = true;
 
   ocrFileList = getTargetFiles();
-
   ocrFileList.forEach(function (ocrfile, index) {
     Logger.log(ocrfile.getName())
+
     // 翻訳の処理を追加
     if (ocrfile.getName() !== ".DS_Store" && index >= this.skipCount) {
+      Logger.log("!")
       //定義があれば、やめる。
       if (PropertiesService.getScriptProperties().getProperty("skipkey")) {
         return;
       } else {
-        // トリガーセットの判定を行う。
+        // 処理時間によりリトライトリガーを作成する。
         if (retrySetting(this.startTime, index, "doRetry")) {
-          // このループの先の処理をしないためにこのフラグをfalseにする。
-          retryFlg = false;
+          proceedFlg = false;
           return;
         }
       }
@@ -156,7 +165,26 @@ function mainProcess(skipCount) {
   }, { 'skipCount': skipCount, 'startTime': startTime });
 
   if (proceedFlg) {
+    Logger.log("Create trigger secondSetting()")
     secondSetting();
+  }
+
+　　/*
+     Private Method化: OCRの処理を実行する。
+    */
+  function doocr(file) {
+    mediaData = file.getBlob();
+    var resource = {
+      title: mediaData.getName(),
+      mimeType: mediaData.getContentType()
+    };
+    // OCRの設定
+    var optionalArgs = {
+      ocr: true,
+      ocrLanguage: 'ja'
+    };
+    // Google Driveにファイル追加
+    Drive.Files.insert(resource, mediaData, optionalArgs);
   }
 }
 
@@ -213,51 +241,23 @@ function processSecond() {
   deleteList.forEach(function (fileId) {
     DriveApp.removeFile(DriveApp.getFileById(fileId))
   })
-}
 
-function makeobj(file) {
-  var obj = {}
-  var content = DocumentApp.openById(file.getId()).getBody().getText()
-  obj['id'] = file.getName()
-  obj['header'] = file.getBlob().getName()
-  obj['content'] = content
+  function makeobj(file) {
+    var obj = {}
+    var content = DocumentApp.openById(file.getId()).getBody().getText()
+    obj['id'] = file.getName()
+    obj['header'] = file.getBlob().getName()
+    obj['content'] = content
 
-  if (content) {
-    return obj
+    if (content) {
+      return obj
+    }
+    return null
   }
-  return null
+
 }
 
 
-/*
-OCRするためのファイルを検索する。
-*/
-function searchFile(condition) {
-  var files = DriveApp.searchFiles('title contains "' + condition + '"');
-  while (files.hasNext()) {
-    var file = files.next();
-    Logger.log(file)
-    doocr(file)
-  }
-}
-
-/*
-OCRの処理を実行する。
-*/
-function doocr(file) {
-  mediaData = file.getBlob();
-  var resource = {
-    title: mediaData.getName(),
-    mimeType: mediaData.getContentType()
-  };
-  // OCRの設定
-  var optionalArgs = {
-    ocr: true,
-    ocrLanguage: 'ja'
-  };
-  // Google Driveにファイル追加
-  Drive.Files.insert(resource, mediaData, optionalArgs);
-}
 
 /*
 結合する。
@@ -324,15 +324,29 @@ function midashi() {
   }
 }
 
+
+function setHeading() {
+  setHeadingAttribute(DOCID)
+}
+
 // 見出しを設定する。
 function setHeadingAttribute(doc_id) {
 
   var body = DocumentApp.openById(doc_id).getBody()
+
   var ps = body.getParagraphs()
+
+  //  var ps = body.getParagraphs
   var normal_styles = {}
   var heading1_styles = {}
   var heading2_styles = {}
   var heading3_styles = {}
+
+  margin = 72
+  body.setMarginBottom(margin)
+  body.setMarginLeft(margin)
+  body.setMarginRight(margin)
+  body.setMarginTop(margin)
 
   normal_styles[DocumentApp.Attribute.FONT_SIZE] = 11
   normal_styles[DocumentApp.Attribute.FONT_FAMILY] = "Roboto"
@@ -362,19 +376,17 @@ function setHeadingAttribute(doc_id) {
   heading3_styles[DocumentApp.Attribute.SPACING_BEFORE] = 6.0
   heading3_styles[DocumentApp.Attribute.SPACING_AFTER] = 6.0
 
-
   for (p in ps) {
-    if (ps[p].getHeading() == "Normal") {
+    Logger.log(ps[p].getText() + ":" + ps[p].getHeading())
+    if (ps[p].getHeading() == "NORMAL") {
       ps[p].setAttributes(normal_styles)
-    } else if (ps[p].getHeading() == "Heading 1") {
+    } else if (ps[p].getHeading() == "HEADING1") {
       ps[p].setAttributes(heading1_styles)
-    } else if (ps[p].getHeading() == "Heading 2") {
+    } else if (ps[p].getHeading() == "HEADING2") {
       ps[p].setAttributes(heading2_styles)
-    } else if (ps[p].getHeading() == "Heading 3") {
+    } else if (ps[p].getHeading() == "HEADING3") {
       ps[p].setAttributes(heading3_styles)
     }
   }
-
-
 }
 
